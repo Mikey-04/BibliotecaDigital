@@ -23,6 +23,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $resultado = $auth->iniciarSesion($usuario, $contrasena);
 
             if ($resultado['exito']) {
+                // --- MODIFICACIÓN CLAVE: Guardamos el rol retornado en la sesión ---
+                $_SESSION['usuario_id'] = $resultado['usuario']['id'];
+                $_SESSION['usuario_nombre'] = $resultado['usuario']['nombre'];
+                $_SESSION['usuario_rol'] = $resultado['usuario']['rol'] ?? 'bibliotecario'; // 'admin' o 'bibliotecario'
+
                 header('Location: index.php');
                 exit;
             } else {

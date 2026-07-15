@@ -85,19 +85,64 @@ class ControladorReservas {
     }
 
     // 3. Agregar libro faltante / Sugerencia de compra por el estudiante
-    public function registrarSolicitudFaltante(int $estudianteId, string $nombreLibro, string $area): bool {
-        $stmt = $this->bd->prepare("
-            INSERT INTO solicitudes_libros (estudiante_id, nombre_libro, area) 
-            VALUES (:estudiante_id, :nombre_libro, :area)
-        ");
-        return $stmt->execute([
-            ':estudiante_id' => $estudianteId,
-            ':nombre_libro' => $nombreLibro,
-            ':area' => $area
-        ]);
+    public function registrarSolicitudFaltante($estudianteId, $nombreLibro, $area) {
+        try {
+            // Aseguramos que apunte a la tabla 'solicitudes_libros' que tienes en la BD
+            $sql = "INSERT INTO solicitudes_libros (estudiante_id, nombre_libro, area, fecha_solicitud) 
+                    VALUES (:estudiante_id, :nombre_libro, :area, NOW())";
+            
+            $stmt = $this->bd->prepare($sql);
+            
+            return $stmt->execute([
+                ':estudiante_id' => $estudianteId,
+                ':nombre_libro'  => $nombreLibro,
+                ':area'          => $area
+            ]);
+        } catch (\PDOException $e) {
+            return false;
+        }
     }
 
-    // 4. Estadísticas de los libros más usados por períodos (Requerimiento explícito)
+    // NUEVO: Alias para crear solicitudes de adquisición desde el backend administrativo
+    public function crearSolicitudAdquisicion(array $datos): array {
+        try {
+            $sql = "INSERT INTO solicitudes_libros (estudiante_id, nombre_libro, area, notas, fecha_solicitud) 
+                    VALUES (:estudiante_id, :nombre_libro, :area, :notas, NOW())";
+            
+            $stmt = $this->bd->prepare($sql);
+            $res = $stmt->execute([
+                ':estudiante_id' => $datos['estudiante_id'],
+                ':nombre_libro'  => $datos['nombre_libro'],
+                ':area'          => $datos['area'],
+                ':notas'         => $datos['notas'] ?? null
+            ]);
+
+            if ($res) {
+                return ['exito' => true, 'mensaje' => 'La solicitud de adquisición se ha guardado correctamente.'];
+            }
+            return ['exito' => false, 'mensaje' => 'No se pudo procesar la inserción de la solicitud.'];
+        } catch (\PDOException $e) {
+            return ['exito' => false, 'mensaje' => 'Error SQL: ' . $e->getMessage()];
+        }
+    }
+
+    // NUEVO: Eliminar o rechazar una solicitud de libro inexistente
+    public function eliminarSolicitud(int $id): array {
+        try {
+            $sql = "DELETE FROM solicitudes_libros WHERE id = :id";
+            $stmt = $this->bd->prepare($sql);
+            $res = $stmt->execute([':id' => $id]);
+
+            if ($res) {
+                return ['exito' => true, 'mensaje' => 'La solicitud ha sido rechazada y eliminada de forma permanente.'];
+            }
+            return ['exito' => false, 'mensaje' => 'La solicitud no pudo ser eliminada.'];
+        } catch (\PDOException $e) {
+            return ['exito' => false, 'mensaje' => 'Error de Base de Datos: ' . $e->getMessage()];
+        }
+    }
+
+    // 4. Estadísticas de los libros más usados por períodos
     public function obtenerEstadisticasMasUsados(string $fechaInicio, string $fechaFin): array {
         $sql = "SELECT l.titulo, c.nombre AS categoria, COUNT(r.id) AS total_prestamos
                 FROM reservas r
@@ -115,4 +160,107 @@ class ControladorReservas {
         ]);
         return $stmt->fetchAll();
     }
+
+    // 5. Proceso de Compra Directa (Resta del Stock con Transacción)
+    public function comprarLibro(int $estudianteId, int $libroId, int $cantidad = 1): array {
+        try {
+            $this->bd->beginTransaction();
+
+            // 1. Validar Stock Bloqueando la Fila con FOR UPDATE
+            $stmt = $this->bd->prepare("SELECT unidades_existentes, precio FROM libros WHERE id = :id FOR UPDATE");
+            $stmt->execute([':id' => $libroId]);
+            $libro = $stmt->fetch();
+
+            if (!$libro || $libro['unidades_existentes'] < $cantidad) {
+                $this->bd->rollBack();
+                return ['exito' => false, 'mensaje' => 'Stock insuficiente para procesar la compra.'];
+            }
+
+            // 2. Restar las unidades correspondientes del stock
+            $stmtUpdate = $this->bd->prepare("UPDATE libros SET unidades_existentes = unidades_existentes - :cant WHERE id = :id");
+            $stmtUpdate->execute([':cant' => $cantidad, ':id' => $libroId]);
+
+            // 3. Insertar el registro de la compra
+            $total = $libro['precio'] * $cantidad;
+            
+            $sqlInsert = "INSERT INTO compras (estudiante_id, libro_id, cantidad, total, fecha_compra) 
+                          VALUES (:estudiante, :libro, :cantidad, :total, NOW())";
+                          
+            $stmtInsert = $this->bd->prepare($sqlInsert);
+            $stmtInsert->execute([
+                ':estudiante' => $estudianteId,
+                ':libro' => $libroId,
+                ':cantidad' => $cantidad,
+                ':total' => $total
+            ]);
+
+            // 4. Capturar el ID exacto de la compra
+            $compraId = $this->bd->lastInsertId();
+
+            $this->bd->commit();
+
+            return [
+                'exito' => true, 
+                'mensaje' => '¡Compra procesada con éxito! Generando factura...',
+                'compra_id' => $compraId
+            ];
+
+        } catch (Exception $e) {
+            $this->bd->rollBack();
+            return ['exito' => false, 'mensaje' => 'Error crítico: ' . $e->getMessage()];
+        }
+    }
+
+    // 6. Obtener todas las solicitudes de adquisición hechas por los estudiantes
+    public function obtenerSolicitudesAdquisicion(): array {
+        try {
+            // Se asume la existencia de la columna "notas" en 'solicitudes_libros'
+            $sql = "SELECT 
+                        s.id,
+                        s.nombre_libro,
+                        s.area,
+                        s.notas,
+                        s.fecha_solicitud,
+                        e.primer_nombre,
+                        e.primer_apellido,
+                        e.cip_identificacion
+                    FROM solicitudes_libros s
+                    INNER JOIN estudiantes e ON s.estudiante_id = e.id
+                    ORDER BY s.id DESC";
+            
+            $stmt = $this->bd->query($sql);
+            return $stmt->fetchAll(PDO::FETCH_ASSOC);
+        } catch (Exception $e) {
+            return [];
+        }
+    }
+
+    // 7. Obtener listado detallado de reservas por rango de fechas para reportes
+public function obtenerReservasPorFechas(string $fechaInicio, string $fechaFin): array {
+    try {
+        $sql = "SELECT 
+                    r.id,
+                    r.fecha_reserva,
+                    r.fecha_devolucion,
+                    r.estado,
+                    l.titulo AS libro_titulo,
+                    e.primer_nombre,
+                    e.primer_apellido,
+                    e.cip_identificacion
+                FROM reservas r
+                JOIN libros l ON r.libro_id = l.id
+                JOIN estudiantes e ON r.estudiante_id = e.id
+                WHERE r.fecha_reserva BETWEEN :inicio AND :fin
+                ORDER BY r.fecha_reserva DESC";
+        
+        $stmt = $this->bd->prepare($sql);
+        $stmt->execute([
+            ':inicio' => $fechaInicio . ' 00:00:00',
+            ':fin'    => $fechaFin . ' 23:59:59'
+        ]);
+        return $stmt->fetchAll(PDO::FETCH_ASSOC);
+    } catch (Exception $e) {
+        return [];
+    }
+}
 }

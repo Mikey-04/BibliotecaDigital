@@ -8,12 +8,16 @@ if (session_status() === PHP_SESSION_NONE) {
     session_start();
 }
 
-// --- Simulación de Login de Estudiante para la Vista Pública ---
-// En un entorno completo, esto validaría contra la tabla 'estudiantes'. 
-// Para efectos prácticos del módulo público, inicializamos una sesión de prueba si no existe:
+// Control de navegación: botón salir
+if (isset($_GET['accion']) && $_GET['accion'] === 'salir') {
+    session_destroy();
+    header('Location: login_estudiante.php');
+    exit;
+}
+
 if (!isset($_SESSION['estudiante_id'])) {
-    $_SESSION['estudiante_id'] = 1;
-    $_SESSION['estudiante_nombre'] = "Juan Pérez";
+    header('Location: login_estudiante.php');
+    exit;
 }
 
 $controladorLibros = new ControladorLibros();
@@ -21,31 +25,55 @@ $controladorReservas = new ControladorReservas();
 
 $mensaje = "";
 $tipo_alerta = "";
+$abrir_factura_id = null;
 
-// 1. Procesar Reserva
-if (isset($_POST['accionar_reserva'])) {
-    $libroId = (int)$_POST['libro_id'];
-    $resultado = $controladorReservas->reservarLibro($_SESSION['estudiante_id'], $libroId);
-    $mensaje = $resultado['mensaje'];
-    $tipo_alerta = $resultado['exito'] ? 'exito' : 'error';
+// --- LEER VARIABLES TEMPORALES TRAS REDIRECCIÓN LIMPIA ---
+if (isset($_SESSION['compra_exitosa_id'])) {
+    $abrir_factura_id = $_SESSION['compra_exitosa_id'];
+    $mensaje = "¡Compra procesada con éxito! Generando factura...";
+    $tipo_alerta = 'exito';
+    // Destruimos la sesión temporal para que solo ocurra UNA VEZ y no al refrescar con F5
+    unset($_SESSION['compra_exitosa_id']); 
 }
 
-// 2. Procesar Solicitud de Libro Faltante
-if (isset($_POST['solicitar_faltante'])) {
-    $nombreLibro = Validador::sanitizarCadena($_POST['nombre_libro'] ?? '');
-    $area = Validador::sanitizarCadena($_POST['area'] ?? '');
+// Procesar Reserva, Compra o Solicitud Faltante
+// Procesar Reserva, Compra o Solicitud Faltante
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    // CORRECCIÓN: Validamos si existe 'libro_id' antes de leerlo para evitar el Warning
+    $libroId = isset($_POST['libro_id']) ? (int)$_POST['libro_id'] : 0;
 
-    if (Validador::validarRequerido($nombreLibro) && Validador::validarRequerido($area)) {
+    // 1. Procesar Reserva
+    if (isset($_POST['accionar_reserva']) && $libroId > 0) {
+        $resultado = $controladorReservas->reservarLibro($_SESSION['estudiante_id'], $libroId);
+        $mensaje = $resultado['mensaje'];
+        $tipo_alerta = $resultado['exito'] ? 'exito' : 'error';
+    }
+    
+    // 2. Procesar Compra Directa
+    if (isset($_POST['accionar_compra']) && $libroId > 0) {
+        $cantidad = (int)($_POST['cantidad_compra'] ?? 1);
+        
+        $resultado = $controladorReservas->comprarLibro($_SESSION['estudiante_id'], $libroId, $cantidad);
+        
+        if ($resultado['exito']) {
+            $_SESSION['compra_exitosa_id'] = $resultado['compra_id'];
+            header("Location: estudiante_panel.php");
+            exit;
+        } else {
+            $mensaje = $resultado['mensaje'];
+            $tipo_alerta = 'error';
+        }
+    }
+
+    // 3. Registrar Solicitud de Libro Faltante (No requiere libro_id)
+    if (isset($_POST['solicitar_faltante'])) {
+        $nombreLibro = Validador::sanitizarCadena($_POST['nombre_libro'] ?? '');
+        $area = Validador::sanitizarCadena($_POST['area'] ?? '');
         $exito = $controladorReservas->registrarSolicitudFaltante($_SESSION['estudiante_id'], $nombreLibro, $area);
-        $mensaje = $exito ? "¡Solicitud de adquisición registrada! La administración revisará la compra." : "Error al registrar la solicitud.";
+        $mensaje = $exito ? "¡Solicitud registrada con éxito!" : "Error al registrar la solicitud.";
         $tipo_alerta = $exito ? 'exito' : 'error';
-    } else {
-        $mensaje = "Todos los campos de la solicitud son obligatorios.";
-        $tipo_alerta = "error";
     }
 }
-
-// 3. Manejo de Buscador
 $buscar = Validador::sanitizarCadena($_GET['buscar'] ?? '');
 $libros = $controladorLibros->consultar($buscar);
 ?>
@@ -53,40 +81,46 @@ $libros = $controladorLibros->consultar($buscar);
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <title>Página Pública - Reservas Estudiantiles</title>
+    <title>Página Pública - Reservas y Compras</title>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', sans-serif; }
         body { background-color: #f1f5f9; color: #334155; }
         header { background: #0f172a; color: white; padding: 20px; display: flex; justify-content: space-between; align-items: center; }
+        .btn-salir { color: #f87171; text-decoration: none; font-weight: bold; margin-left: 15px; }
         .contenedor { max-width: 1200px; margin: 30px auto; padding: 0 20px; display: grid; grid-template-columns: 3fr 1fr; gap: 30px; }
         .buscador-barra { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); margin-bottom: 20px; display: flex; gap: 10px; }
-        .buscador-barra input { flex: 1; padding: 10px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 16px; }
+        .buscador-barra input { flex: 1; padding: 10px; border: 1px solid #cbd5e1; border-radius: 6px; }
         .buscador-barra button { padding: 10px 20px; background: #0284c7; color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; }
         .galeria-libros { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 20px; }
         .tarjeta-libro { background: white; padding: 15px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); text-align: center; display: flex; flex-direction: column; justify-content: space-between; }
-        .tarjeta-libro img { max-width: 100%; height: 180px; object-fit: contain; margin-bottom: 15px; border-radius: 4px; background: #f8fafc; }
-        .tarjeta-libro h3 { font-size: 16px; margin-bottom: 5px; color: #1e293b; }
-        .stock { font-size: 14px; margin-bottom: 15px; font-weight: bold; }
-        .stock.disponible { color: #16a34a; }
-        .stock.agotado { color: #dc2626; }
-        .btn-reservar { width: 100%; padding: 8px; background: #0284c7; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; }
-        .btn-reservar:disabled { background: #cbd5e1; cursor: not-allowed; }
-        .seccion-lateral { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); height: fit-content; }
-        .seccion-lateral h2 { font-size: 18px; margin-bottom: 15px; color: #0f172a; border-bottom: 2px solid #f1f5f9; padding-bottom: 8px; }
-        .form-grupo { margin-bottom: 12px; }
-        .form-grupo label { display: block; font-size: 14px; margin-bottom: 5px; font-weight: 500; }
-        .form-grupo input, .form-grupo select { width: 100%; padding: 8px; border: 1px solid #cbd5e1; border-radius: 4px; }
-        .btn-solicitar { width: 100%; padding: 10px; background: #0d9488; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; margin-top: 5px; }
-        .alerta { padding: 15px; border-radius: 6px; margin-bottom: 25px; font-weight: 500; text-align: center; }
-        .alerta.exito { background: #dcfce7; color: #16a34a; border: 1px solid #bbf7d0; }
-        .alerta.error { background: #fee2e2; color: #dc2626; border: 1px solid #fecaca; }
+        .tarjeta-libro img { max-width: 100%; height: 160px; object-fit: contain; margin-bottom: 10px; }
+        .precio-etiqueta { font-size: 15px; color: #1e3a8a; font-weight: bold; margin: 5px 0; }
+        .selector-cantidad { margin-bottom: 8px; display: flex; align-items: center; justify-content: center; gap: 5px; }
+        .selector-cantidad select { padding: 2px 5px; border-radius: 4px; border: 1px solid #cbd5e1; }
+        .acciones-btn { display: flex; gap: 5px; margin-top: 10px; }
+        .btn-action { flex: 1; padding: 8px; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; font-size: 13px; color: white; }
+        .btn-res { background: #0284c7; }
+        .btn-com { background: #16a34a; }
+        .seccion-lateral { background: white; padding: 20px; border-radius: 8px; }
+        .alerta { padding: 15px; border-radius: 6px; margin-bottom: 25px; text-align: center; font-weight: bold; }
+        .alerta.exito { background: #dcfce7; color: #16a34a; }
+        .alerta.error { background: #fee2e2; color: #dc2626; }
     </style>
+    <?php if ($abrir_factura_id): ?>
+    <script>
+        // Dispara la ventana emergente de la factura de manera única tras la redirección segura
+        window.open('factura.php?id=<?php echo $abrir_factura_id; ?>', '_blank', 'width=600,height=700');
+    </script>
+    <?php endif; ?>
 </head>
 <body>
 
     <header>
-        <h2>📖 Biblioteca Universitaria - Área de Reservas</h2>
-        <div>👤 Estudiante: <?php echo htmlspecialchars($_SESSION['estudiante_nombre']); ?></div>
+        <h2>📖 Biblioteca Digital Universitaria</h2>
+        <div>
+            <span>👤 Estudiante: <?php echo htmlspecialchars($_SESSION['estudiante_nombre']); ?></span>
+            <a href="estudiante_panel.php?accion=salir" class="btn-salir">Salir</a>
+        </div>
     </header>
 
     <div class="contenedor">
@@ -95,66 +129,69 @@ $libros = $controladorLibros->consultar($buscar);
                 <div class="alerta <?php echo $tipo_alerta; ?>"><?php echo $mensaje; ?></div>
             <?php endif; ?>
 
-            <form method="GET" action="estudiante_panel.php" class="buscador-barra">
-                <input type="text" name="buscar" placeholder="Buscar por título, autor o palabras clave..." value="<?php echo htmlspecialchars($buscar); ?>">
+            <form method="GET" class="buscador-barra">
+                <input type="text" name="buscar" placeholder="Buscar libros por nombre..." value="<?php echo htmlspecialchars($buscar); ?>">
                 <button type="submit">🔍 Buscar</button>
             </form>
 
             <div class="galeria-libros">
-                <?php if (count($libros) > 0): ?>
-                    <?php foreach ($libros as $libro): ?>
-                        <div class="tarjeta-libro">
-                            <div>
-                                <img src="<?php echo !empty($libro['thumbnail_url']) ? $libro['thumbnail_url'] : 'publico/archivos/por-defecto.png'; ?>" alt="Portada">
-                                <h3><?php echo htmlspecialchars($libro['titulo']); ?></h3>
-                                <p style="font-size:12px; color:#64748b; margin-bottom:10px;"><?php echo htmlspecialchars($libro['nombre_categoria']); ?></p>
-                            </div>
-                            <div>
-                                <?php if ($libro['unidades_existentes'] > 0): ?>
-                                    <div class="stock disponible">Disponibles: <?php echo $libro['unidades_existentes']; ?> u.</div>
-                                    <form method="POST" action="estudiante_panel.php">
-                                        <input type="hidden" name="libro_id" value="<?php echo $libro['id']; ?>">
-                                        <button type="submit" name="accionar_reserva" class="btn-reservar">⚡ Reservar Libro</button>
-                                    </form>
-                                <?php else: ?>
-                                    <div class="stock agotado">Agotado temporalmente</div>
-                                    <button class="btn-reservar" disabled>No Disponible</button>
-                                <?php endif; ?>
-                            </div>
+                <?php foreach ($libros as $libro): ?>
+                    <div class="tarjeta-libro">
+                        <div>
+                            <img src="<?php echo $libro['thumbnail_url'] ?? 'publico/archivos/por-defecto.png'; ?>" alt="Portada">
+                            <h3><?php echo htmlspecialchars($libro['titulo']); ?></h3>
+                            <p class="precio-etiqueta">Precio: $<?php echo number_format($libro['precio'] ?? 0.00, 2); ?></p>
                         </div>
-                    <?php endforeach; ?>
-                <?php else: ?>
-                    <p style="grid-column: 1/-1; text-align: center; padding: 40px; color: #64748b;">No se encontraron libros disponibles con esos criterios.</p>
-                <?php endif; ?>
+                        <div>
+                            <?php if ($libro['unidades_existentes'] > 0): ?>
+                                <p style="color:#16a34a; font-weight:bold; font-size:13px; margin-bottom: 5px;">Disponibles: <?php echo $libro['unidades_existentes']; ?></p>
+                                
+                                <form method="POST" style="margin-bottom: 8px;">
+                                    <input type="hidden" name="libro_id" value="<?php echo $libro['id']; ?>">
+                                    <button type="submit" name="accionar_reserva" class="btn-action btn-res" style="width: 100%;">⚡ Reservar 1 Ejemplar</button>
+                                </form>
+
+                                <form method="POST">
+                                    <input type="hidden" name="libro_id" value="<?php echo $libro['id']; ?>">
+                                    
+                                    <div class="selector-cantidad">
+                                        <label style="font-size: 11px; font-weight: bold;">Unidades a comprar:</label>
+                                        <select name="cantidad_compra">
+                                            <option value="1">1</option>
+                                            <option value="2">2</option>
+                                        </select>
+                                    </div>
+
+                                    <button type="submit" name="accionar_compra" class="btn-action btn-com" style="width: 100%;">🛒 Comprar</button>
+                                </form>
+                            <?php else: ?>
+                                <p style="color:#dc2626; font-weight:bold; font-size:13px;">Agotado</p>
+                            <?php endif; ?>
+                        </div>
+                    </div>
+                <?php endforeach; ?>
             </div>
         </main>
 
         <aside class="seccion-lateral">
-            <h2>🛒 ¿No encuentras un libro?</h2>
-            <p style="font-size:13px; color:#64748b; margin-bottom:15px;">Agrégalo a la lista de compras solicitadas para que la administración evalúe su adquisición.</p>
-            
-            <form method="POST" action="estudiante_panel.php" autocomplete="off">
-                <div class="form-grupo">
-                    <label for="nombre_libro">Título del Libro</label>
-                    <input type="text" id="nombre_libro" name="nombre_libro" required placeholder="Ej: Lógica Computacional">
-                </div>
-                
-                <div class="form-grupo">
-                    <label for="area">Área Temática</label>
-                    <select id="area" name="area" required>
-                        <option value="">-- Seleccionar Área --</option>
-                        <option value="Matemáticas">Matemáticas</option>
-                        <option value="Ciencias">Ciencias</option>
-                        <option value="Tecnologías">Tecnologías</option>
-                        <option value="Deporte">Deporte</option>
-                        <option value="Salud">Salud</option>
-                        <option value="Revistas Científicas">Revistas Científicas</option>
-                    </select>
-                </div>
-
-                <button type="submit" name="solicitar_faltante" class="btn-solicitar">➕ Solicitar Compra</button>
-            </form>
-        </aside>
+    <h3>🛒 Solicitar Adquisición</h3>
+    <form method="POST" style="margin-top:15px;">
+        <input type="text" name="nombre_libro" placeholder="Nombre del libro" required style="width:100%; padding:8px; margin-bottom:10px;"><br>
+        
+        <select name="area" required style="width:100%; padding:8px; margin-bottom:10px; border: 1px solid #cbd5e1; border-radius: 4px; background: white;">
+            <option value="" disabled selected>Selecciona el área...</option>
+            <option value="Tecnologías">Tecnologías</option>
+            <option value="Ciencias Exactas">Ciencias Exactas</option>
+            <option value="Medicina y Salud">Medicina y Salud</option>
+            <option value="Humanidades">Humanidades</option>
+            <option value="Negocios y Economía">Negocios y Economía</option>
+            <option value="Negocios y Economía">Calculo</option>
+            <option value="Negocios y Economía">Fisica</option>
+        </select><br>
+        
+        <button type="submit" name="solicitar_faltante" style="width:100%; padding:10px; background:#0d9488; color:white; border:none; border-radius:4px; font-weight:bold;">Enviar Petición</button>
+    </form>
+</aside>
     </div>
 
 </body>

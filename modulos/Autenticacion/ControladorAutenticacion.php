@@ -66,35 +66,30 @@ class ControladorAutenticacion {
 
     // Método principal de Login
     public function iniciarSesion(string $usuario, string $contrasena): array {
-        // 1. Verificar si está bloqueado temporalmente
-        if ($this->verificarBloqueo($usuario)) {
-            $this->registrarLog($usuario, false, "Intento de login bloqueado por exceso de fallos.");
-            return ['exito' => false, 'mensaje' => 'Tu cuenta o IP ha sido bloqueada temporalmente por superar los 3 intentos fallidos.'];
-        }
+        try {
+            // Buscamos el usuario por su username y traemos su 'rol' de la BD
+            $stmt = $this->bd->prepare("SELECT id, username, password, nombre, rol FROM usuarios WHERE username = :user LIMIT 1");
+            $stmt->execute([':user' => $usuario]);
+            $userRow = $stmt->fetch(PDO::FETCH_ASSOC);
 
-        // 2. Buscar al usuario en la base de datos
-        $stmt = $this->bd->prepare("SELECT * FROM usuarios WHERE username = :usuario AND estado = 1");
-        $stmt->execute([':usuario' => $usuario]);
-        $usuarioEntidad = $stmt->fetch();
-
-        if ($usuarioEntidad && password_verify($contrasena, $usuarioEntidad['password'])) {
-            // Login Exitoso
-            $this->registrarLog($usuario, true, "Inicio de sesión correcto.");
-            
-            // Iniciar sesión global de PHP
-            if (session_status() === PHP_SESSION_NONE) {
-                session_start();
+            if ($userRow) {
+                // Verificar si tu contraseña está encriptada con password_hash
+                // Si usas contraseñas planas en desarrollo (no recomendado): $contrasena === $userRow['password']
+                if (password_verify($contrasena, $userRow['password']) || $contrasena === $userRow['password']) {
+                    return [
+                        'exito' => true,
+                        'usuario' => [
+                            'id' => $userRow['id'],
+                            'nombre' => $userRow['nombre'],
+                            'rol' => $userRow['rol'] ?? 'bibliotecario' // Por defecto si está nulo en la BD
+                        ]
+                    ];
+                }
             }
-            $_SESSION['usuario_id'] = $usuarioEntidad['id'];
-            $_SESSION['usuario_nombre'] = $usuarioEntidad['nombre'];
-            $_SESSION['usuario_rol'] = 'admin';
 
-            return ['exito' => true, 'mensaje' => 'Acceso concedido.'];
-        } else {
-            // Login Fallido (Registro de anomalía)
-            $detalle = $usuarioEntidad ? "Contraseña incorrecta." : "Usuario no existe.";
-            $this->registrarLog($usuario, false, "Fallo de autenticación: " . $detalle);
-            return ['exito' => false, 'mensaje' => 'Credenciales incorrectas. Intente de nuevo.'];
+            return ['exito' => false, 'mensaje' => 'Usuario o contraseña incorrectos.'];
+        } catch (Exception $e) {
+            return ['exito' => false, 'mensaje' => 'Error en el servidor de autenticación.'];
         }
     }
 }

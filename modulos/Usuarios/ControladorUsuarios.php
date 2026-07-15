@@ -12,17 +12,24 @@ class ControladorUsuarios {
     }
 
     // Crear Usuario (Altas)
-    public function crear(string $username, string $contrasena, string $nombre): bool {
-        $hash = password_hash($contrasena, PASSWORD_DEFAULT);
-        $stmt = $this->bd->prepare("INSERT INTO usuarios (username, password, nombre) VALUES (:username, :password, :nombre)");
+    public function crear($username, $password, $nombre, $rol = 'bibliotecario') {
+        // 1. Encriptamos la contraseña
+        $hash = password_hash($password, PASSWORD_DEFAULT);
+        
+        // 2. Preparamos la consulta incluyendo la columna 'rol'
+        $sql = "INSERT INTO usuarios (username, password, nombre, rol) VALUES (:user, :pass, :nombre, :rol)";
+        
+        $stmt = $this->bd->prepare($sql);
+        
         return $stmt->execute([
-            ':username' => $username,
-            ':password' => $hash,
-            ':nombre' => $nombre
+            ':user'   => $username,
+            ':pass'   => $hash,
+            ':nombre' => $nombre,
+            ':rol'    => $rol
         ]);
     }
 
-    // Eliminar Usuario (Bajas / En este caso borrado físico o lógico, usaremos físico según requerimiento)
+    // Eliminar Usuario (Bajas)
     public function eliminar(int $id): bool {
         $stmt = $this->bd->prepare("DELETE FROM usuarios WHERE id = :id AND username != 'admin'");
         return $stmt->execute([':id' => $id]);
@@ -34,7 +41,6 @@ class ControladorUsuarios {
         $termino = "%$buscar%";
 
         // 1. Contar el total de registros para la paginación
-        // Usamos dos parámetros nombrados diferentes (:buscar1 y :buscar2) para evitar el error HY093
         $sqlTotal = "SELECT COUNT(*) FROM usuarios WHERE username LIKE :buscar1 OR nombre LIKE :buscar2";
         $stmtTotal = $this->bd->prepare($sqlTotal);
         $stmtTotal->execute([
@@ -45,8 +51,8 @@ class ControladorUsuarios {
         $totalPaginas = ceil($totalRegistros / $porPagina);
 
         // 2. Obtener los registros paginados
-        // También separamos los parámetros aquí (:buscar3 y :buscar4)
-        $sqlDatos = "SELECT id, username, nombre, estado, created_at FROM usuarios 
+        // --- CORRECCIÓN: Agregamos la columna 'rol' en la consulta SELECT ---
+        $sqlDatos = "SELECT id, username, nombre, rol, estado, created_at FROM usuarios 
                      WHERE username LIKE :buscar3 OR nombre LIKE :buscar4 
                      ORDER BY id DESC LIMIT :limit OFFSET :offset";
         
