@@ -28,7 +28,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $_SESSION['usuario_nombre'] = $resultado['usuario']['nombre'];
                 $_SESSION['usuario_rol'] = $resultado['usuario']['rol'] ?? 'bibliotecario'; // 'admin' o 'bibliotecario'
 
-                header('Location: index.php');
+                header('Location: panel_admin.php');
                 exit;
             } else {
                 $mensaje_error = $resultado['mensaje'];
@@ -48,40 +48,44 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <title>Acceso al Sistema - Biblioteca</title>
-    <style>
-        body { font-family: Arial, sans-serif; background-color: #f4f6f9; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
-        .login-box { background: white; padding: 30px; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); width: 350px; }
-        h2 { text-align: center; margin-bottom: 20px; color: #333; }
-        .grupo-formulario { margin-bottom: 15px; }
-        label { display: block; margin-bottom: 5px; color: #666; }
-        input[type="text"], input[type="password"] { width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px; box-sizing: border-box; }
-        button { width: 100%; padding: 10px; background-color: #007bff; border: none; color: white; border-radius: 4px; cursor: pointer; font-size: 16px; }
-        button:hover { background-color: #0056b3; }
-        .alerta { background-color: #f8d7da; color: #721c24; padding: 10px; border-radius: 4px; margin-bottom: 15px; border: 1px solid #f5c6cb; text-align: center; }
-    </style>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Acceso Administrativo | Biblioteca</title>
+    <link rel="stylesheet" href="publico/archivos/biblioteca.css">
 </head>
-<body>
+<body class="auth-page auth-admin">
+    <main class="auth-shell">
+        <section class="auth-brand">
+            <div class="auth-brand-content">
+                <div class="auth-logo">📚</div>
+                <h1>Gestión bibliotecaria, clara y segura.</h1>
+                <p>Administra usuarios, estudiantes, profesores, inventario, solicitudes y reportes desde un solo lugar.</p>
+            </div>
+            <div class="auth-brand-footer">Sistema Bibliotecario Universitario · Panel del personal</div>
+        </section>
 
-<div class="login-box">
-    <h2>Biblioteca - Login</h2>
-    
-    <?php if (!empty($mensaje_error)): ?>
-        <div class="alerta"><?php echo $mensaje_error; ?></div>
-    <?php endif; ?>
+        <section class="auth-card">
+            <span class="auth-kicker">Acceso restringido</span>
+            <h2>Bienvenido</h2>
+            <p class="auth-subtitle">Ingresa tus credenciales para acceder al panel administrativo.</p>
 
-    <form action="login.php" method="POST" autocomplete="off">
-        <div class="grupo-formulario">
-            <label for="usuario">Usuario</label>
-            <input type="text" id="usuario" name="usuario" required>
-        </div>
-        <div class="grupo-formulario">
-            <label for="contrasena">Contraseña</label>
-            <input type="password" id="contrasena" name="contrasena" required>
-        </div>
-        <button type="submit">Ingresar</button>
-    </form>
-</div>
+            <?php if (!empty($mensaje_error)): ?>
+                <div class="alerta">⚠️ <?php echo htmlspecialchars($mensaje_error); ?></div>
+            <?php endif; ?>
 
+            <form action="login.php" method="POST" autocomplete="off">
+                <div class="grupo-formulario">
+                    <label for="usuario">Usuario</label>
+                    <input type="text" id="usuario" name="usuario" placeholder="Escribe tu usuario" autocomplete="username" required>
+                </div>
+                <div class="grupo-formulario">
+                    <label for="contrasena">Contraseña</label>
+                    <input type="password" id="contrasena" name="contrasena" placeholder="Escribe tu contraseña" autocomplete="current-password" required>
+                </div>
+                <button type="submit">Ingresar al panel →</button>
+            </form>
+
+            <a class="auth-back" href="presentacion.php">← Volver a la página principal</a>
+        </section>
+    </main>
 </body>
 </html>

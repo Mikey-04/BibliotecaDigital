@@ -11,11 +11,15 @@ if (!isset($_SESSION['estudiante_id'])) {
     die("Error: Acceso no autorizado.");
 }
 
-$idCompra = (int)($_GET['id'] ?? 0);
+$idCompra = (int)($_GET['id'] ?? $_SESSION['ultima_compra_id'] ?? 0);
 
 if ($idCompra <= 0) {
-    die("Error: ID de factura no especificado o inválido.");
+    header('Location: estudiante_panel.php?factura_error=1');
+    exit;
 }
+
+// Conservamos el último ID válido para permitir recargar la factura sin perderlo.
+$_SESSION['ultima_compra_id'] = $idCompra;
 
 try {
     $bd = BaseDatos::obtenerInstancia();
@@ -68,26 +72,11 @@ try {
 <html lang="es">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Comprobante de Compra #<?php echo $factura['factura_numero']; ?></title>
-    <style>
-        body { font-family: 'Courier New', Courier, monospace; background: #f5f5f5; color: #000; padding: 20px; }
-        .ticket { background: #fff; max-width: 450px; margin: 0 auto; padding: 25px; border: 1px double #000; box-shadow: 0 0 10px rgba(0,0,0,0.1); }
-        .centro { text-align: center; }
-        .separador { border-top: 1px dashed #000; margin: 15px 0; }
-        .tabla-datos { width: 100%; border-collapse: collapse; font-size: 14px; }
-        .tabla-datos td { padding: 5px 0; }
-        .tabla-datos td.derecha { text-align: right; }
-        .hash-caja { background: #f8fafc; border: 1px solid #e2e8f0; padding: 10px; font-size: 11px; word-break: break-all; margin-top: 15px; text-align: center; color: #475569; }
-        .firma-etiqueta { font-size: 10px; font-weight: bold; text-transform: uppercase; margin-bottom: 3px; color: #0f172a; }
-        .estado-valido { color: #15803d; font-weight: bold; font-size: 15px; margin: 10px 0; }
-        @media print {
-            body { background: none; padding: 0; }
-            .ticket { box-shadow: none; border: none; max-width: 100%; }
-            .btn-imprimir { display: none; }
-        }
-    </style>
+    <link rel="stylesheet" href="publico/archivos/biblioteca.css">
 </head>
-<body>
+<body class="invoice-page">
 
     <div class="ticket">
         <div class="centro">
@@ -154,6 +143,7 @@ try {
 
         <div class="centro" style="margin-top: 25px;">
             <button class="btn-imprimir" onclick="window.print();" style="padding: 8px 15px; cursor: pointer; font-weight: bold;">🖨️ Imprimir Factura</button>
+            <a href="estudiante_panel.php" class="btn-imprimir" style="display:inline-block; margin-left:8px; padding:8px 15px; text-decoration:none; font-weight:bold;">← Volver al catálogo</a>
         </div>
     </div>
 

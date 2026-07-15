@@ -1,0 +1,1 @@
+[2026-07-15 18:00:13] Error: Error de Conexión: SQLSTATE[HY000] [1049] Unknown database 'biblioteca_db' en C:\xampp\htdocs\BibliotecaDigital-main\configuracion\BaseDatos.php línea 27

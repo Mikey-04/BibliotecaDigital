@@ -156,25 +156,33 @@ class ControladorLibros {
 
     // Consultar Catálogo con Buscador Integrado
     // Consultar Catálogo con Buscador Integrado (Corregido para evitar el error HY093)
-    public function consultar(string $buscar = ''): array {
-        $sql = "SELECT l.*, c.nombre AS nombre_categoria 
+    public function consultar(string $buscar = '', int $categoriaId = 0): array {
+        $sql = "SELECT l.*, c.nombre AS nombre_categoria
                 FROM libros l
                 LEFT JOIN categorias c ON l.categoria_id = c.id";
-        
-        if (!empty($buscar)) {
-            // Usamos dos marcadores distintos (:buscar1 y :buscar2) para no confundir a PDO
-            $sql .= " WHERE l.titulo LIKE :buscar1 OR l.descripcion LIKE :buscar2";
-            $stmt = $this->bd->prepare($sql);
-            
-            // Asignamos el mismo valor a ambos marcadores de posición
-            $stmt->execute([
-                ':buscar1' => "%$buscar%",
-                ':buscar2' => "%$buscar%"
-            ]);
-        } else {
-            $stmt = $this->bd->query($sql);
+
+        $condiciones = [];
+        $parametros = [];
+
+        if ($buscar !== '') {
+            $condiciones[] = "(l.titulo LIKE :buscar1 OR l.descripcion LIKE :buscar2)";
+            $parametros[':buscar1'] = "%{$buscar}%";
+            $parametros[':buscar2'] = "%{$buscar}%";
         }
-        
+
+        if ($categoriaId > 0) {
+            $condiciones[] = "l.categoria_id = :categoria_id";
+            $parametros[':categoria_id'] = $categoriaId;
+        }
+
+        if ($condiciones) {
+            $sql .= ' WHERE ' . implode(' AND ', $condiciones);
+        }
+
+        $sql .= ' ORDER BY l.titulo ASC';
+        $stmt = $this->bd->prepare($sql);
+        $stmt->execute($parametros);
+
         return $stmt->fetchAll();
     }
 
