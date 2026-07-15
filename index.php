@@ -198,19 +198,33 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $mensaje_global = $res['exito'] ? "✅ " . $res['mensaje'] : "❌ " . $res['mensaje'];
     }
 
-    // 6. Crear Solicitud Manual de Libro Inexistente
-    if (isset($_POST['crear_solicitud_inexistente'])) {
+// 6. Crear Solicitud Manual de Libro Inexistente
+if (isset($_POST['crear_solicitud_inexistente'])) {
+    // DIAGNÓSTICO: Verifica si los datos llegan del formulario
+    if (empty($_POST['estudiante_id']) || empty($_POST['nombre_libro_solicitado'])) {
+        $mensaje_global = "❌ Error: Campos obligatorios vacíos (Estudiante o Libro).";
+    } else {
         $datosSolicitud = [
             'estudiante_id' => (int)$_POST['estudiante_id'],
             'nombre_libro'  => Validador::sanitizarCadena($_POST['nombre_libro_solicitado']),
             'area'          => Validador::sanitizarCadena($_POST['area_tematica']),
             'notas'         => Validador::sanitizarCadena($_POST['notas_adicionales'] ?? '')
         ];
+        
         if (method_exists($controladorReservas, 'crearSolicitudAdquisicion')) {
             $res = $controladorReservas->crearSolicitudAdquisicion($datosSolicitud);
-            $mensaje_global = $res['exito'] ? "📥 " . $res['mensaje'] : "❌ " . $res['mensaje'];
+            
+            // Si $res llega vacío, sabremos que el controlador falló
+            if (empty($res)) {
+                $mensaje_global = "❌ Error crítico: El controlador devolvió una respuesta vacía.";
+            } else {
+                $mensaje_global = ($res['exito'] ?? false) ? "📥 " . ($res['mensaje'] ?? 'Solicitud creada') : "❌ " . ($res['mensaje'] ?? 'Error desconocido');
+            }
+        } else {
+            $mensaje_global = "❌ Error: El método no existe.";
         }
     }
+}
 }
 
 // Carga de listados dinámicos
